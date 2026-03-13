@@ -315,15 +315,3 @@ program.c  → compiled ELF
 ---
 
 ```
-
----
-
-If you want, I can also give you a **much better kernel-level version of these notes** explaining:
-
-- `search_binary_handler()`
-- `binfmt_elf.c`
-- `binfmt_script.c`
-- `binfmt_misc.c`
-- how `execve()` chooses loaders
-
-That version is **closer to what kernel developers study**.
